@@ -1,0 +1,40 @@
+name: SILENT MOD Telegram Bot Watchdog
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: silent-mod-telegram-watchdog
+  cancel-in-progress: true
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Restart bot workflow if no run is active
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          WORKFLOW_FILE="run-bot.yml"
+          RUNS_JSON="$(gh api "repos/$GH_REPO/actions/workflows/$WORKFLOW_FILE/runs?per_page=20")"
+          ACTIVE_RUNS="$(printf '%s' "$RUNS_JSON" | jq '[.workflow_runs[] | select(.status == "queued" or .status == "in_progress" or .status == "waiting" or .status == "requested" or .status == "pending")] | length')"
+          if [ "$ACTIVE_RUNS" -gt 0 ]; then
+            echo "Telegram bot workflow is active."
+            exit 0
+          fi
+          gh api --method POST "repos/$GH_REPO/actions/workflows/$WORKFLOW_FILE/dispatches" -f ref=main
+          if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_CHAT_ID:-}" ]; then
+            curl --fail --silent --show-error --request POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" --data-urlencode "text=SILENT MOD watchdog: no active bot run was found; a restart was requested. Check GitHub Actions if the bot remains offline." >/dev/null
+          fi
