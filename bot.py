@@ -111,7 +111,7 @@ def ensure_persistent_nodes() -> None:
 def firebase_server_time() -> datetime:
     """Ask RTDB to resolve its server timestamp sentinel; fail closed if unavailable."""
     stamp_ref = ref("bot_meta/server_time_ms")
-    stamp_ref.set(db.ServerValue.TIMESTAMP)
+    stamp_ref.set({".sv": "timestamp"})
     raw = stamp_ref.get()
     if not isinstance(raw, (int, float)) or not math.isfinite(float(raw)):
         raise RuntimeError("Firebase did not return a numeric server timestamp; no enforcement performed.")
