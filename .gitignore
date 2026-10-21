@@ -1,0 +1,5 @@
+__pycache__/
+*.py[cod]
+.env
+*.json.key
+service-account*.json
