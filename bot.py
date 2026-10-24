@@ -136,6 +136,18 @@ def access_hours() -> float:
     return hours
 
 
+def grace_hours() -> float:
+    """Extra tolerance beyond configured access_hours; defaults to 2 hours."""
+    raw = env("GRACE_HOURS") or "24"
+    try:
+        value = float(raw)
+        if not math.isfinite(value) or value < 0 or value > 168:
+            raise ValueError
+    except (TypeError, ValueError):
+        raise RuntimeError("GRACE_HOURS must be a number between 0 and 168.")
+    return value
+
+
 def parse_expiry(value: Any, tz: ZoneInfo) -> datetime | None:
     if not isinstance(value, str) or not value.strip():
         return None
@@ -253,6 +265,7 @@ def run_scan(trigger: str = "scheduled", notify: bool = True) -> dict[str, Any]:
     """Run one scan. Writes bans only when AUTO_BAN=true."""
     tz = current_timezone()
     hours = access_hours()
+    grace = grace_hours()
     now_utc = firebase_server_time()
     now_local = now_utc.astimezone(tz)
     data = fetch_root()
@@ -265,7 +278,7 @@ def run_scan(trigger: str = "scheduled", notify: bool = True) -> dict[str, Any]:
     mismatch_count = 0
     invalid_expiry_count = 0
     skipped_whitelist = 0
-    threshold = now_utc + timedelta(hours=hours)
+    threshold = now_utc + timedelta(hours=hours + grace)
 
     for user_key, raw_record in users.items():
         if not isinstance(raw_record, dict):
@@ -325,6 +338,8 @@ def run_scan(trigger: str = "scheduled", notify: bool = True) -> dict[str, Any]:
         "timestamp": format_local(now_utc, tz),
         "trigger": trigger,
         "access_hours": hours,
+        "grace_hours": grace,
+        "enforcement_window_hours": hours + grace,
         "timezone": tz.key,
         "users": len(users),
         "whitelisted": len(whitelist),
@@ -344,7 +359,7 @@ def run_scan(trigger: str = "scheduled", notify: bool = True) -> dict[str, Any]:
         lines = [
             f"SILENT MOD enforcement scan ({trigger})",
             f"Time: {summary['timestamp']}",
-            f"access_hours: {hours:g}",
+            f"access_hours: {hours:g} | grace_hours: {grace:g} | enforcement window: {hours + grace:g}h",
             f"User records: {len(users)} | Whitelist: {len(whitelist)} | Over-limit devices: {len(over_limit)}",
             f"New bans: {len(newly_banned)} | Whitelist exemptions: {skipped_whitelist}",
             f"HWID mismatches skipped: {mismatch_count} | Invalid expiries skipped: {invalid_expiry_count}",
@@ -441,6 +456,8 @@ def handle_command(message: dict[str, Any]) -> None:
                     f"User records: {last.get('users', '?')}\n"
                     f"Over-limit devices: {last.get('over_limit', '?')}\n"
                     f"New bans last scan: {last.get('newly_banned', '?')}\n"
+                    f"Grace hours: {last.get('grace_hours', 24)}\n"
+                    f"Enforcement window: {last.get('enforcement_window_hours', last.get('access_hours', 0) + 48)} hours\n"
                     f"AUTO_BAN: {last.get('auto_ban', False)}"
                 )
             else:
@@ -456,6 +473,7 @@ def handle_command(message: dict[str, Any]) -> None:
             details = result["over_limit_details"]
             lines = [
                 "Scan complete.", f"Time: {result['timestamp']}", f"access_hours: {result['access_hours']:g}",
+                f"Grace period: {result['grace_hours']:g} hours (total window: {result['enforcement_window_hours']:g} hours)",
                 f"User records: {result['users']}", f"Over-limit devices: {result['over_limit']}",
                 f"New bans: {result['newly_banned']}", f"Whitelist exemptions: {result['whitelist_exemptions']}",
                 f"HWID mismatches skipped: {result['hwid_mismatches_skipped']}",
