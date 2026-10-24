@@ -13,7 +13,7 @@ permissions:
 
 concurrency:
   group: silent-mod-telegram-enforcement
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   bot:
@@ -46,5 +46,6 @@ jobs:
           FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
           ACCESS_TIMEZONE: ${{ vars.ACCESS_TIMEZONE }}
           AUTO_BAN: ${{ vars.AUTO_BAN }}
+          GRACE_HOURS: ${{ vars.GRACE_HOURS }}
           SCAN_INTERVAL_SECONDS: '900'
         run: python -u bot.py
